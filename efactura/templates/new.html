@@ -1,18 +1,21 @@
 {% extends "base.html" %}
 {% from "_party.html" import party_fields with context %}
 {% block content %}
-<h1>{% if ref %}Factură storno pentru {{ ref.number }}{% else %}Factură nouă{% endif %}</h1>
-<form method="post" action="/factura/noua">
+<h1>{% if editing %}Editează {% if ref %}factura storno{% else %}factura{% endif %} {{ number }}
+  {%- elif ref %}Factură storno pentru {{ ref.number }}{% else %}Factură nouă{% endif %}</h1>
+<form method="post" action="{{ action }}">
   {% if ref %}
   <input type="hidden" name="credit_note" value="1">
   <input type="hidden" name="ref_number" value="{{ ref.number }}">
   <input type="hidden" name="ref_date" value="{{ ref.date }}">
+  {% if not editing %}
   <p class="hint">Liniile sunt cele din factura {{ ref.number }} din {{ ref.date }}. Pentru o stornare
     parțială, micșorează cantitățile sau șterge linii. Sumele rămân pozitive: documentul pleacă la ANAF
     ca notă de credit (tip 381) care face referire la factura inițială.</p>
   {% endif %}
+  {% endif %}
   <div class="card grid">
-    <label>Număr<input name="number" value="{{ number }}" required></label>
+    <label>Număr<input name="number" value="{{ number }}" required {% if editing %}readonly{% endif %}></label>
     <label>Data emiterii<input name="issue_date" type="date" value="{{ today }}" required></label>
     {% if not ref %}<label>Scadență<input name="due_date" type="date" value="{{ due }}"></label>{% endif %}
     <label>Monedă<select name="currency" id="currency">
@@ -50,8 +53,8 @@
       {% if not supplier.vat_payer %}<span class="hint">(neplătitor de TVA)</span>{% endif %}</p>
   </div>
 
-  <div class="card"><label>Mențiuni (opțional)<textarea name="note" rows="2"></textarea></label></div>
-  <button class="btn">{% if ref %}Generează storno și validează{% else %}Generează și validează{% endif %}</button>
+  <div class="card"><label>Mențiuni (opțional)<textarea name="note" rows="2">{{ note }}</textarea></label></div>
+  <button class="btn">{% if editing %}Salvează și revalidează{% elif ref %}Generează storno și validează{% else %}Generează și validează{% endif %}</button>
   <span class="hint">Factura e verificată automat la ANAF (fără autentificare).</span>
 </form>
 

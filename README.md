@@ -26,7 +26,7 @@ is built by GitHub Actions from this repo (`.github/workflows/build.yml`).
 - Hand-writing UBL XML is error-prone (county codes, `SECTOR1..6` for Bucharest,
   VAT category rules for non-VAT payers…).
 
-## Features (v0.3)
+## Features (v0.4)
 
 - Simple web form in Romanian, runs only on your computer (`127.0.0.1`)
 - Generates UBL 2.1 XML in the **CIUS-RO** format
@@ -38,6 +38,8 @@ is built by GitHub Actions from this repo (`.github/workflows/build.yml`).
 - Official ANAF PDF rendering
 - Local archive: SQLite + one XML file per invoice in `data/arhiva/<year>/`
 - Invoice numbering, saved customers
+- Fix or delete invoices ANAF rejected, without breaking the numbering;
+  mark invoices you uploaded to SPV by hand so they are locked
 - Single-file Windows `.exe`, no Python needed
 
 **Not yet:** sending to SPV. That needs a qualified digital certificate (OAuth).
