@@ -38,3 +38,11 @@ def test_full_flow(client):
     assert "TST0002" in c.get("/factura/noua").text      # numbering advanced
     assert "Client Exemplu SRL" in c.get("/?q=Exemplu").text
     assert c.get("/factura/1/xml").content.startswith(b"<?xml")
+
+
+def test_exe_keeps_data_in_documents(monkeypatch):
+    import sys
+    import efactura.store as store
+    monkeypatch.delenv("EFACTURA_DATA", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert store._default_data_dir() == store._documents_dir() / "e-Factura PFA"

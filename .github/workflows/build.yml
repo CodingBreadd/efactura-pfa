@@ -1,0 +1,55 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt pyinstaller pytest
+
+      - name: Tests (offline)
+        run: pytest -q
+        env:
+          EFACTURA_OFFLINE: "1"
+
+      - run: pyinstaller --noconfirm efactura-pfa.spec
+
+      - name: Smoke test the .exe
+        shell: pwsh
+        env:
+          EFACTURA_DATA: ${{ runner.temp }}\efactura-data
+          EFACTURA_NO_BROWSER: "1"
+        run: |
+          $p = Start-Process dist\efactura-pfa.exe -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+            try { $ok = (Invoke-WebRequest http://127.0.0.1:8765/setari -UseBasicParsing).StatusCode -eq 200 }
+            catch { Start-Sleep 1 }
+          }
+          Stop-Process $p -Force
+          if (-not $ok) { throw "exe did not serve /setari" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: efactura-pfa-exe
+          path: dist/efactura-pfa.exe
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/efactura-pfa.exe
+          generate_release_notes: true
