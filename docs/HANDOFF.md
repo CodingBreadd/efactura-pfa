@@ -10,7 +10,11 @@
   - VAT regime (VAT payers only, invoice-wide): S / AE (reverse charge, needs the buyer's VAT id) / O (outside the EU).
     The form picks it from the country and the VAT checkbox and fills in a suggested note (`VAT_NOTES`). Non-VAT payers are always O.
   - All 5 foreign variants pass live ANAF. The form JS was exercised in jsdom (country switch, regime, note, rate lock).
-- Next: Phase 5b, an app icon (.ico for the exe plus a favicon) and polish (friendly HTML error pages instead of JSON).
+- Phase 5a merged. **Phase 5b**, branch `phase5b-icon-polish`: `assets/icon.ico` (blue rounded square with a white "e",
+  drawn with Pillow, a dev-only dependency excluded from the exe) is embedded in the exe. The UI has a matching inline SVG favicon
+  and shows the version in the header. Errors render as an HTML page with a back button for browsers;
+  requests without `Accept: text/html` (the BNR fetch, tests) still get JSON.
+- After 5b merges: tag `v0.5.0`.
 
 ## Phase 4 notes (v0.4.0)
 - `draft`/`invalid` invoices can be edited (number fixed) or deleted (the latest returns its number). `valid` ones get a storno only.
@@ -43,7 +47,7 @@
 2. SPV OAuth: register the app on anaf.ro, get client_id/secret, add a redirect handler, store tokens.
    Needs a tester with a certificate.
 3. Pull received invoices (listaMesajeFactura + descarcare) into the archive. Needs SPV.
-4. Nice to have: an app icon (.ico) for the exe, and code signing to avoid the SmartScreen warning.
+4. Nice to have: code signing to avoid the SmartScreen warning (costs money; SignPath offers free certificates for OSS).
 
 Why this project: no open-source e-Factura tool for PFAs exists (anafpy is transport only;
 Odoo modules are paid; PilotFisc/facturamea are closed), and SPV purges after ~60 days.

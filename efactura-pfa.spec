@@ -7,7 +7,7 @@ a = Analysis(
     pathex=[SPECPATH],
     datas=[("efactura/templates", "efactura/templates")],
     hiddenimports=["efactura.app"] + collect_submodules("uvicorn"),
-    excludes=["tkinter", "pytest"],
+    excludes=["tkinter", "pytest", "PIL"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(
@@ -18,4 +18,5 @@ exe = EXE(
     name="efactura-pfa",
     console=True,
     upx=False,
+    icon="assets/icon.ico",
 )

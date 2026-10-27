@@ -158,3 +158,15 @@ def test_non_vat_payer_is_always_category_o(client, monkeypatch):
     c.post("/factura/noua", data=form)
     xml = c.get("/factura/1/xml").content
     assert b"<cbc:ID>O</cbc:ID>" in xml and b"<cbc:ID>S</cbc:ID>" not in xml
+
+
+def test_browser_errors_are_pages(client):
+    c, _ = client
+    c.post("/setari", data=SUPPLIER)
+    html = {"accept": "text/html,application/xhtml+xml"}
+    r = c.get("/factura/999", headers=html)
+    assert r.status_code == 404 and "Factura nu există." in r.text and "Înapoi" in r.text
+    r = c.post("/factura/noua", headers=html, data={"number": "X1", "issue_date": "2026-10-27", **CUSTOMER})
+    assert r.status_code == 400 and "Adaugă cel puțin o linie" in r.text and "încă în formular" in r.text
+    assert c.get("/factura/999").json() == {"detail": "Factura nu există."}  # fetch() still gets JSON
+    assert "v0." in c.get("/", headers=html).text

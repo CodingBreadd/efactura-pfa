@@ -8,10 +8,12 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import anaf, bnr
+from . import __version__, anaf, bnr
 from .models import (COUNTIES, COUNTRIES, CURRENCIES, EU, UNITS, VAT_CATEGORIES, VAT_NOTES,
                      Invoice, Line, Party)
 from .store import Store
@@ -25,10 +27,18 @@ EDITABLE = {"draft", "invalid"}
 PARTY_FIELDS = ("name", "cui", "street", "city", "county", "reg_com", "iban", "bank", "email", "country")
 
 
-def render(request: Request, name: str, **ctx):
+def render(request: Request, name: str, status_code: int = 200, **ctx):
     ctx.update(counties=COUNTIES, units=UNITS, vat_categories=VAT_CATEGORIES, currencies=CURRENCIES,
-               countries=COUNTRIES, eu=sorted(EU), vat_notes=VAT_NOTES)
-    return templates.TemplateResponse(request, name, ctx)
+               countries=COUNTRIES, eu=sorted(EU), vat_notes=VAT_NOTES, version=__version__)
+    return templates.TemplateResponse(request, name, ctx, status_code=status_code)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def friendly_errors(request: Request, exc: StarletteHTTPException):
+    """Browsers get a page with a back button; fetch() calls (the BNR rate) keep the JSON."""
+    if "text/html" not in request.headers.get("accept", ""):
+        return await http_exception_handler(request, exc)
+    return render(request, "error.html", status_code=exc.status_code, code=exc.status_code, detail=exc.detail)
 
 
 def _party_from_form(form, prefix: str) -> Party:

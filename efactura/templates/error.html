@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>{% if code == 404 %}Nu am găsit pagina{% else %}Ceva nu e în regulă{% endif %}</h1>
+  <p>{{ detail }}</p>
+  <div class="row">
+    <a class="btn" href="javascript:history.back()">Înapoi</a>
+    <a class="btn ghost" href="/">Facturi</a>
+  </div>
+  {% if code == 400 %}<p class="hint">Când te întorci, datele introduse sunt încă în formular.</p>{% endif %}
+</div>
+{% endblock %}
