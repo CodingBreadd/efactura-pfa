@@ -81,7 +81,8 @@ class Store:
         cur = self.db.execute(
             "INSERT INTO invoices (number, issue_date, customer, total, currency, data, xml, status, messages)"
             " VALUES (?,?,?,?,?,?,?,?,?)",
-            (inv.number, inv.issue_date.isoformat(), inv.customer.name, str(inv.gross_total),
+            (inv.number, inv.issue_date.isoformat(), inv.customer.name,
+             str(-inv.gross_total if inv.credit_note else inv.gross_total),
              inv.currency, json.dumps(inv.to_dict(), ensure_ascii=False), xml, status,
              json.dumps(messages, ensure_ascii=False)))
         self.db.commit()
@@ -101,6 +102,10 @@ class Store:
 
     def get_invoice(self, invoice_id: int) -> sqlite3.Row | None:
         return self.db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+
+    def find_id(self, number: str) -> int | None:
+        row = self.db.execute("SELECT id FROM invoices WHERE number=?", (number,)).fetchone()
+        return row["id"] if row else None
 
     def customers(self) -> list[dict]:
         """Distinct past customers, newest first, for quick re-use in the form."""

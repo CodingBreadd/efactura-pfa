@@ -1,14 +1,21 @@
 # Handoff
 
-## State (2026-10-27): Phase 2 (Windows .exe) in PR, not merged yet
-- Branch `phase2-windows-exe` holds the PyInstaller build plus CI. Merge it, then tag `v0.2.0` to publish the release.
-- `efactura-pfa.spec`: one-file console exe, 24 MB. Built and smoke-tested locally on Python 3.14:
-  settings, invoice creation, live ANAF validation, PDF, and the XML archive all work.
-- `.github/workflows/build.yml`: on PRs and pushes it runs the offline tests, builds the exe,
-  smoke-tests it and uploads it as an artifact. On a `v*` tag it attaches the exe to a GitHub release.
-- The exe stores data in `Documents\e-Factura PFA` (the real Documents folder via SHGetFolderPathW,
-  so OneDrive redirection works). `EFACTURA_DATA` overrides it. The settings page shows the path.
-- A second launch only reopens the browser (the port is already taken). `EFACTURA_NO_BROWSER=1` is for CI.
+## State (2026-10-27)
+- **v0.2.0 released**: https://github.com/CodingBreadd/efactura-pfa/releases/tag/v0.2.0 (Windows exe, built by CI)
+- **Phase 3 (v0.3.0)**, branch `phase3-storno-eur`:
+  - Storno = UBL `CreditNote` (type 381), positive amounts, `BillingReference` to the original invoice.
+    No DueDate and no PaymentMeans. Use the "Stornează" button on an invoice page; quantities can be lowered for a partial storno.
+    In the list, the `total` column is stored negative for credit notes (it also drives the "storno" badge).
+  - EUR/USD/GBP: `TaxCurrencyCode RON` plus a second `TaxTotal` in RON (BR-RO-030 / BR-53). A Note carries the rate.
+  - `efactura/bnr.py`: rates from `curs.bnr.ro` (the old www.bnr.ro XML URLs now redirect to the homepage).
+    Uses the last rate published strictly before the invoice date (Codul fiscal art. 290).
+    The namespace differs between the 2025 (http) and 2026 (https) files, so parsing matches on local names.
+  - ANAF: validation and PDF use the `FCN` standard for credit notes and `FACT1` for invoices. SPV upload uses `CN` / `UBL`.
+  - All 8 variants (invoice/storno x RON/EUR x VAT/non-VAT) pass live ANAF validation.
+
+## Phase 2 notes
+- `efactura-pfa.spec`: one-file console exe. `.github/workflows/build.yml` runs the tests, builds and smoke-tests the exe on PRs and pushes, and on a `v*` tag attaches it to a release.
+- The exe stores data in `Documents\e-Factura PFA` (real Documents folder via SHGetFolderPathW). `EFACTURA_DATA` overrides it.
 - `docs/ANNOUNCE.md`: draft Romanian post asking for testers. Darius posts it himself.
 
 ## v0.1 (merged on main)
@@ -18,17 +25,16 @@
   `SpvClient` (upload/status/list/download) is written from the docs but **untested**.
 - `efactura/store.py`: SQLite plus XML files in `<data>/arhiva/<year>/`
 - `efactura/app.py`: FastAPI and Jinja UI in Romanian. `python -m efactura` serves port 8765.
-- Tests: `pytest`, 9 passing (offline mode: `EFACTURA_OFFLINE=1`)
+- Tests: `pytest`, 23 passing (offline mode: `EFACTURA_OFFLINE=1`)
 
 ## Next steps (in order)
-1. Merge the PR, then `git tag v0.2.0 && git push --tags`, then check that the release has the exe.
-2. Post `docs/ANNOUNCE.md` to r/programare, r/Romania and PFA groups to find SPV testers.
-3. Phase 3: credit notes (InvoiceTypeCode 381) and EUR invoices (TaxCurrencyCode RON plus a second TaxTotal).
-4. UI: edit or delete drafts; invoices are currently immutable once created.
-5. SPV OAuth: register the app on anaf.ro, get client_id/secret, add a redirect handler, store tokens.
+1. Darius: post `docs/ANNOUNCE.md` to r/programare, r/Romania and PFA groups to find SPV testers.
+2. Foreign customers: non-RO country, no county code, foreign VAT id (common for freelancers billing EU/US clients).
+3. UI: edit or delete drafts and invalid invoices (currently immutable). Show "stornată de X" on the original.
+4. SPV OAuth: register the app on anaf.ro, get client_id/secret, add a redirect handler, store tokens.
    Needs a tester with a certificate.
-6. Pull received invoices (listaMesajeFactura + descarcare) into the archive.
-7. Nice to have: an app icon (.ico) for the exe, and code signing to avoid the SmartScreen warning.
+5. Pull received invoices (listaMesajeFactura + descarcare) into the archive. Needs SPV.
+6. Nice to have: an app icon (.ico) for the exe, and code signing to avoid the SmartScreen warning.
 
 Why this project: no open-source e-Factura tool for PFAs exists (anafpy is transport only;
 Odoo modules are paid; PilotFisc/facturamea are closed), and SPV purges after ~60 days.

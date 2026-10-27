@@ -8,15 +8,24 @@ tested against the live service yet.
 from __future__ import annotations
 
 import httpx
+from lxml import etree
 
 PUBLIC_BASE = "https://webservicesp.anaf.ro/prod/FCTEL/rest"
 OAUTH_AUTHORIZE = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize"
 OAUTH_TOKEN = "https://logincert.anaf.ro/anaf-oauth2/v1/token"
 
 
+def is_credit_note(xml: bytes) -> bool:
+    return etree.QName(etree.fromstring(xml)).localname == "CreditNote"
+
+
+def _standard(xml: bytes) -> str:
+    return "FCN" if is_credit_note(xml) else "FACT1"
+
+
 def validate(xml: bytes, timeout: float = 30) -> tuple[bool, list[str]]:
     """Check an invoice against ANAF's schema and CIUS-RO business rules."""
-    r = httpx.post(f"{PUBLIC_BASE}/validare/FACT1", content=xml,
+    r = httpx.post(f"{PUBLIC_BASE}/validare/{_standard(xml)}", content=xml,
                    headers={"Content-Type": "text/plain"}, timeout=timeout)
     r.raise_for_status()
     data = r.json()
@@ -26,7 +35,7 @@ def validate(xml: bytes, timeout: float = 30) -> tuple[bool, list[str]]:
 
 def to_pdf(xml: bytes, timeout: float = 60) -> bytes:
     """Render the invoice as ANAF's official PDF (validates it first)."""
-    r = httpx.post(f"{PUBLIC_BASE}/transformare/FACT1/DA", content=xml,
+    r = httpx.post(f"{PUBLIC_BASE}/transformare/{_standard(xml)}/DA", content=xml,
                    headers={"Content-Type": "text/plain"}, timeout=timeout)
     r.raise_for_status()
     if not r.content.startswith(b"%PDF"):
@@ -45,10 +54,10 @@ class SpvClient:
 
     def upload(self, xml: bytes) -> str:
         """Returns the upload index (index_incarcare) used to poll status."""
-        r = self.http.post(f"{self.base}/upload", params={"standard": "UBL", "cif": self.cif},
+        standard = "CN" if is_credit_note(xml) else "UBL"
+        r = self.http.post(f"{self.base}/upload", params={"standard": standard, "cif": self.cif},
                            content=xml, headers={"Content-Type": "text/plain"})
         r.raise_for_status()
-        from lxml import etree
         root = etree.fromstring(r.content)
         index = root.get("index_incarcare")
         if not index:
@@ -58,7 +67,6 @@ class SpvClient:
     def status(self, upload_index: str) -> dict:
         r = self.http.get(f"{self.base}/stareMesaj", params={"id_incarcare": upload_index})
         r.raise_for_status()
-        from lxml import etree
         root = etree.fromstring(r.content)
         return dict(root.attrib)
 
