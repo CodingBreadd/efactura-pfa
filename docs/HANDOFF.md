@@ -9,6 +9,14 @@
 - `efactura/app.py`: FastAPI and Jinja UI in Romanian. `python -m efactura` serves port 8765.
 - Tests: `pytest`, 8 passing (offline mode: `EFACTURA_OFFLINE=1`)
 
+## Recommended order
+Phase 2 = Windows .exe (PyInstaller) attached to a GitHub release, then post it to
+Romanian freelancer communities (r/programare, r/Romania, PFA groups) and ask for
+testers with a certificate for SPV. Then credit notes + EUR invoices.
+Why this project: no open-source e-Factura tool for PFAs exists (anafpy is transport
+only; Odoo modules are paid; PilotFisc/facturamea are closed), and SPV purges after ~60 days.
+Work through branches + PRs from now on; ask before merging.
+
 ## Known gaps / next steps
 1. Published: https://github.com/CodingBreadd/efactura-pfa (public, main)
 2. SPV OAuth flow: register the app on anaf.ro, get client_id/secret, add a
