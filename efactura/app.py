@@ -12,7 +12,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from . import anaf, bnr
-from .models import COUNTIES, CURRENCIES, UNITS, VAT_CATEGORIES, Invoice, Line, Party
+from .models import (COUNTIES, COUNTRIES, CURRENCIES, EU, UNITS, VAT_CATEGORIES, VAT_NOTES,
+                     Invoice, Line, Party)
 from .store import Store
 from .ubl import build_xml
 
@@ -21,17 +22,23 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 store = Store()
 
 EDITABLE = {"draft", "invalid"}
-PARTY_FIELDS = ("name", "cui", "street", "city", "county", "reg_com", "iban", "bank", "email")
+PARTY_FIELDS = ("name", "cui", "street", "city", "county", "reg_com", "iban", "bank", "email", "country")
 
 
 def render(request: Request, name: str, **ctx):
-    ctx.update(counties=COUNTIES, units=UNITS, vat_categories=VAT_CATEGORIES, currencies=CURRENCIES)
+    ctx.update(counties=COUNTIES, units=UNITS, vat_categories=VAT_CATEGORIES, currencies=CURRENCIES,
+               countries=COUNTRIES, eu=sorted(EU), vat_notes=VAT_NOTES)
     return templates.TemplateResponse(request, name, ctx)
 
 
 def _party_from_form(form, prefix: str) -> Party:
     data = {f: (form.get(f"{prefix}_{f}") or "").strip() for f in PARTY_FIELDS}
-    data["cui"] = data["cui"].upper().removeprefix("RO").strip()
+    data["country"] = data["country"] or "RO"
+    if data["country"] == "RO":
+        data["cui"] = data["cui"].upper().removeprefix("RO").strip()
+    else:  # a foreign VAT or registration number, kept as given; the region is free text
+        data["cui"] = data["cui"].upper().replace(" ", "")
+        data["county"] = (form.get(f"{prefix}_region") or "").strip()
     return Party(vat_payer=form.get(f"{prefix}_vat_payer") == "on", **data)
 
 
@@ -64,7 +71,8 @@ def _invoice_form(request: Request, **prefill):
     ctx = dict(number=store.next_number(), today=today.isoformat(),
                due=(today + timedelta(days=14)).isoformat(), supplier=store.get("supplier"),
                customers=store.customers(), customer={}, lines=[], currency="RON",
-               exchange_rate="", ref=None, note="", action="/factura/noua", editing=False)
+               exchange_rate="", ref=None, note="", action="/factura/noua", editing=False,
+               vat_regime="S")
     return render(request, "new.html", **(ctx | prefill))
 
 
@@ -87,6 +95,7 @@ def credit_note_form(request: Request, invoice_id: int):
     if inv.credit_note:
         raise HTTPException(400, "O factură storno nu se mai stornează.")
     return _invoice_form(request, customer=inv.customer.__dict__, lines=_form_lines(inv), currency=inv.currency,
+                         vat_regime=inv.lines[0].vat_category,
                          exchange_rate=str(inv.exchange_rate or ""),
                          ref={"number": inv.number, "date": inv.issue_date.isoformat()})
 
@@ -102,8 +111,14 @@ def exchange_rate(moneda: str, data: str):
 
 def _invoice_from_form(form, number: str) -> Invoice:
     supplier = Party(**store.get("supplier"))
-    vat_payer = supplier.vat_payer
     try:
+        # Non-VAT payers are always O. VAT payers pick S / AE / O (the form suggests one by country).
+        category = (form.get("vat_regime") or "S") if supplier.vat_payer else "O"
+        if category not in VAT_CATEGORIES:
+            raise ValueError(f"regim TVA necunoscut {category}")
+        customer = _party_from_form(form, "c")
+        if category == "AE" and not customer.vat_id:
+            raise ValueError("taxarea inversă cere codul de TVA UE al clientului")
         lines = []
         for name, qty, price, unit, rate in zip(form.getlist("line_name"), form.getlist("line_qty"),
                                                 form.getlist("line_price"), form.getlist("line_unit"),
@@ -112,8 +127,8 @@ def _invoice_from_form(form, number: str) -> Invoice:
                 continue
             lines.append(Line(name=name.strip(), quantity=Decimal(qty.replace(",", ".")),
                               unit_price=Decimal(price.replace(",", ".")), unit=unit,
-                              vat_category="S" if vat_payer else "O",
-                              vat_rate=Decimal(rate or "0") if vat_payer else Decimal("0")))
+                              vat_category=category,
+                              vat_rate=Decimal(rate or "0") if category == "S" else Decimal("0")))
         if not lines:
             raise ValueError("Adaugă cel puțin o linie.")
         credit = form.get("credit_note") == "1"
@@ -127,7 +142,7 @@ def _invoice_from_form(form, number: str) -> Invoice:
                 raise ValueError("completează cursul BNR")
         inv = Invoice(number=number.strip(), issue_date=date.fromisoformat(form["issue_date"]),
                       due_date=date.fromisoformat(form["due_date"]) if form.get("due_date") and not credit else None,
-                      supplier=supplier, customer=_party_from_form(form, "c"),
+                      supplier=supplier, customer=customer,
                       lines=lines, note=(form.get("note") or "").strip(),
                       currency=currency, exchange_rate=rate, credit_note=credit,
                       ref_number=(form.get("ref_number") or "").strip(),
@@ -176,7 +191,8 @@ def edit_form(request: Request, invoice_id: int):
                          due=inv.due_date.isoformat() if inv.due_date else "", note=inv.note,
                          customer=inv.customer.__dict__, lines=_form_lines(inv), currency=inv.currency,
                          exchange_rate=str(inv.exchange_rate or ""), ref=ref if inv.credit_note else None,
-                         action=f"/factura/{invoice_id}/editeaza", editing=True)
+                         action=f"/factura/{invoice_id}/editeaza", editing=True,
+                         vat_regime=inv.lines[0].vat_category)
 
 
 @app.post("/factura/{invoice_id}/editeaza")
