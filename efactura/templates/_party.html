@@ -1,0 +1,22 @@
+{% macro party_fields(prefix, p, with_bank=False) %}
+<div class="grid">
+  <label>Denumire<input name="{{prefix}}_name" value="{{ p.name or '' }}" required></label>
+  <label>CUI / CIF (fără RO)<input name="{{prefix}}_cui" value="{{ p.cui or '' }}" required></label>
+  <label>Nr. Reg. Com.<input name="{{prefix}}_reg_com" value="{{ p.reg_com or '' }}"></label>
+  <label>Email<input name="{{prefix}}_email" type="email" value="{{ p.email or '' }}"></label>
+  <label>Stradă și număr<input name="{{prefix}}_street" value="{{ p.street or '' }}" required></label>
+  <label>Localitate <span class="hint">(București: SECTOR1…SECTOR6)</span>
+    <input name="{{prefix}}_city" value="{{ p.city or '' }}" required></label>
+  <label>Județ
+    <select name="{{prefix}}_county" required>
+      {% for code, name in counties.items() %}
+      <option value="{{code}}" {% if p.county == code %}selected{% endif %}>{{name}}</option>
+      {% endfor %}
+    </select></label>
+  {% if with_bank %}
+  <label>IBAN<input name="{{prefix}}_iban" value="{{ p.iban or '' }}"></label>
+  <label>Banca<input name="{{prefix}}_bank" value="{{ p.bank or '' }}"></label>
+  {% endif %}
+</div>
+<label class="check"><input type="checkbox" name="{{prefix}}_vat_payer" {% if p.vat_payer %}checked{% endif %}> Plătitor de TVA</label>
+{% endmacro %}

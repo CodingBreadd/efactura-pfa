@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row" style="justify-content:space-between; margin-bottom:16px">
+  <h1 style="margin:0">Facturi</h1>
+  <a class="btn" href="/factura/noua">+ Factură nouă</a>
+</div>
+<div class="card">
+  <form class="row" style="margin-bottom:12px">
+    <input name="q" value="{{ q }}" placeholder="Caută după număr sau client" style="flex:1; margin:0">
+    <button class="btn ghost">Caută</button>
+  </form>
+  {% if invoices %}
+  <table>
+    <tr><th>Număr</th><th>Data</th><th>Client</th><th class="num">Total</th><th>Stare</th></tr>
+    {% for i in invoices %}
+    <tr>
+      <td><a href="/factura/{{ i.id }}">{{ i.number }}</a></td>
+      <td>{{ i.issue_date }}</td>
+      <td>{{ i.customer }}</td>
+      <td class="num">{{ i.total }} {{ i.currency }}</td>
+      <td><span class="badge {{ i.status }}">{{ {"valid":"validă","invalid":"cu erori","draft":"nevalidată","sent":"trimisă"}[i.status] }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Nicio factură încă.</p>
+  {% endif %}
+</div>
+{% endblock %}

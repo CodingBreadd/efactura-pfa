@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row" style="justify-content:space-between; margin-bottom:16px">
+  <h1 style="margin:0">Factura {{ inv.number }}
+    <span class="badge {{ row.status }}">{{ {"valid":"validă la ANAF","invalid":"cu erori","draft":"nevalidată","sent":"trimisă"}[row.status] }}</span></h1>
+  <div class="row">
+    <a class="btn ghost" href="/factura/{{ row.id }}/xml">Descarcă XML</a>
+    <a class="btn ghost" href="/factura/{{ row.id }}/pdf" target="_blank">PDF (ANAF)</a>
+    <form method="post" action="/factura/{{ row.id }}/valideaza"><button class="btn ghost">Revalidează</button></form>
+  </div>
+</div>
+
+{% if messages %}
+<div class="card"><h2>Mesaje ANAF</h2><ul class="msgs">{% for m in messages %}<li>{{ m }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<div class="card grid">
+  <div><h2>Furnizor</h2>{{ inv.supplier.name }}<br><span class="muted">CUI {{ inv.supplier.vat_id or inv.supplier.cui }}<br>
+    {{ inv.supplier.street }}, {{ inv.supplier.city }}, {{ counties[inv.supplier.county] }}</span></div>
+  <div><h2>Client</h2>{{ inv.customer.name }}<br><span class="muted">CUI {{ inv.customer.vat_id or inv.customer.cui }}<br>
+    {{ inv.customer.street }}, {{ inv.customer.city }}, {{ counties[inv.customer.county] }}</span></div>
+  <div><h2>Date</h2>Emisă: {{ inv.issue_date }}<br>{% if inv.due_date %}Scadentă: {{ inv.due_date }}{% endif %}</div>
+</div>
+
+<div class="card">
+  <table>
+    <tr><th>Denumire</th><th class="num">Cant.</th><th>U.M.</th><th class="num">Preț</th><th class="num">Valoare</th></tr>
+    {% for l in inv.lines %}
+    <tr><td>{{ l.name }}</td><td class="num">{{ l.quantity }}</td><td>{{ units.get(l.unit, l.unit) }}</td>
+        <td class="num">{{ l.unit_price }}</td><td class="num">{{ l.amount }}</td></tr>
+    {% endfor %}
+    <tr><td colspan="4" class="num muted">Total fără TVA</td><td class="num">{{ inv.net_total }}</td></tr>
+    <tr><td colspan="4" class="num muted">TVA</td><td class="num">{{ inv.tax_total }}</td></tr>
+    <tr><td colspan="4" class="num"><b>Total de plată</b></td><td class="num"><b>{{ inv.gross_total }} {{ inv.currency }}</b></td></tr>
+  </table>
+</div>
+<p class="hint">Trimiterea în SPV (cu certificat digital) vine în versiunea următoare. Până atunci poți încărca XML-ul manual în SPV.</p>
+{% endblock %}

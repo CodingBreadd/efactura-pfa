@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_party.html" import party_fields with context %}
+{% block content %}
+<h1>Factură nouă</h1>
+<form method="post" action="/factura/noua">
+  <div class="card grid">
+    <label>Număr<input name="number" value="{{ number }}" required></label>
+    <label>Data emiterii<input name="issue_date" type="date" value="{{ today }}" required></label>
+    <label>Scadență<input name="due_date" type="date" value="{{ due }}"></label>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2>Client</h2>
+      {% if customers %}
+      <select id="pick" style="width:auto; margin:0">
+        <option value="">Alege un client anterior…</option>
+        {% for c in customers %}<option value="{{ loop.index0 }}">{{ c.name }} ({{ c.cui }})</option>{% endfor %}
+      </select>
+      {% endif %}
+    </div>
+    {{ party_fields("c", {}) }}
+  </div>
+
+  <div class="card">
+    <h2>Produse / servicii</h2>
+    <table id="lines">
+      <tr><th>Denumire</th><th style="width:90px">Cant.</th><th style="width:110px">U.M.</th>
+          <th style="width:120px">Preț unitar</th>
+          {% if supplier.vat_payer %}<th style="width:80px">TVA %</th>{% endif %}
+          <th class="num" style="width:110px">Valoare</th><th></th></tr>
+    </table>
+    <button type="button" class="btn ghost" id="add">+ Linie</button>
+    <p class="num" style="text-align:right">Total: <b id="total">0.00</b> RON
+      {% if not supplier.vat_payer %}<span class="hint">(neplătitor de TVA)</span>{% endif %}</p>
+  </div>
+
+  <div class="card"><label>Mențiuni (opțional)<textarea name="note" rows="2"></textarea></label></div>
+  <button class="btn">Generează și validează</button>
+  <span class="hint">Factura e verificată automat la ANAF (fără autentificare).</span>
+</form>
+
+<template id="line-tpl">
+  <tr>
+    <td><input name="line_name" required></td>
+    <td><input name="line_qty" value="1" inputmode="decimal" required></td>
+    <td><select name="line_unit">{% for code, name in units.items() %}<option value="{{code}}">{{name}}</option>{% endfor %}</select></td>
+    <td><input name="line_price" value="0" inputmode="decimal" required></td>
+    {% if supplier.vat_payer %}<td><input name="line_rate" value="21" inputmode="decimal"></td>
+    {% else %}<input type="hidden" name="line_rate" value="0">{% endif %}
+    <td class="num line-total">0.00</td>
+    <td><button type="button" class="btn ghost del" title="Șterge">×</button></td>
+  </tr>
+</template>
+
+<script>
+const customers = {{ customers | tojson }};
+const table = document.getElementById("lines");
+const vatPayer = {{ supplier.vat_payer | tojson }};
+const num = v => parseFloat(String(v).replace(",", ".")) || 0;
+
+function recalc() {
+  let total = 0;
+  table.querySelectorAll("tr").forEach((tr, i) => {
+    if (i === 0) return;
+    const q = num(tr.querySelector("[name=line_qty]").value);
+    const p = num(tr.querySelector("[name=line_price]").value);
+    const r = vatPayer ? num(tr.querySelector("[name=line_rate]").value) : 0;
+    const net = Math.round(q * p * 100) / 100;
+    tr.querySelector(".line-total").textContent = net.toFixed(2);
+    total += net * (1 + r / 100);
+  });
+  document.getElementById("total").textContent = total.toFixed(2);
+}
+function addLine() {
+  table.appendChild(document.getElementById("line-tpl").content.cloneNode(true));
+  recalc();
+}
+document.getElementById("add").onclick = addLine;
+table.addEventListener("input", recalc);
+table.addEventListener("click", e => {
+  if (e.target.classList.contains("del") && table.rows.length > 2) { e.target.closest("tr").remove(); recalc(); }
+});
+const pick = document.getElementById("pick");
+if (pick) pick.onchange = () => {
+  const c = customers[pick.value]; if (!c) return;
+  for (const [k, v] of Object.entries(c)) {
+    const el = document.querySelector(`[name=c_${k}]`);
+    if (!el) continue;
+    if (el.type === "checkbox") el.checked = !!v; else el.value = v ?? "";
+  }
+};
+addLine();
+</script>
+{% endblock %}

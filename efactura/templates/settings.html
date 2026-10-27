@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_party.html" import party_fields with context %}
+{% block content %}
+<h1>Setări</h1>
+<form method="post" action="/setari">
+  <div class="card">
+    <h2>Datele tale (furnizor)</h2>
+    {{ party_fields("s", s, with_bank=True) }}
+  </div>
+  <div class="card">
+    <h2>Numerotare facturi</h2>
+    <div class="grid">
+      <label>Serie<input name="series" value="{{ series }}"></label>
+      <label>Următorul număr<input name="next_number" type="number" min="1" value="{{ next_number }}"></label>
+    </div>
+  </div>
+  <button class="btn">Salvează</button>
+</form>
+{% endblock %}

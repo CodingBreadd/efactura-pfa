@@ -1,0 +1,97 @@
+"""Local archive: SQLite for search, plus plain XML files per year for easy backup.
+
+ANAF's SPV deletes messages after ~60 days, so this is the user's permanent copy.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+from pathlib import Path
+
+DATA_DIR = Path(os.environ.get("EFACTURA_DATA", Path.cwd() / "data"))
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY,
+    number TEXT UNIQUE NOT NULL,
+    issue_date TEXT NOT NULL,
+    customer TEXT NOT NULL,
+    total TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    data TEXT NOT NULL,
+    xml BLOB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',      -- draft | valid | invalid | sent
+    messages TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+
+class Store:
+    def __init__(self, data_dir: Path = DATA_DIR):
+        self.dir = Path(data_dir)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(self.dir / "efactura.db", check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript(SCHEMA)
+
+    # settings
+    def get(self, key: str, default=None):
+        row = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return json.loads(row["value"]) if row else default
+
+    def set(self, key: str, value) -> None:
+        self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, json.dumps(value)))
+        self.db.commit()
+
+    def next_number(self) -> str:
+        series = self.get("series", "PFA")
+        n = self.get("next_number", 1)
+        return f"{series}{n:04d}"
+
+    def bump_number(self) -> None:
+        self.set("next_number", self.get("next_number", 1) + 1)
+
+    # invoices
+    def save_invoice(self, inv, xml: bytes, status: str, messages: list[str]) -> int:
+        cur = self.db.execute(
+            "INSERT INTO invoices (number, issue_date, customer, total, currency, data, xml, status, messages)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (inv.number, inv.issue_date.isoformat(), inv.customer.name, str(inv.gross_total),
+             inv.currency, json.dumps(inv.to_dict(), ensure_ascii=False), xml, status,
+             json.dumps(messages, ensure_ascii=False)))
+        self.db.commit()
+        self._write_file(inv.issue_date.year, inv.number, xml)
+        return cur.lastrowid
+
+    def update_status(self, invoice_id: int, status: str, messages: list[str]) -> None:
+        self.db.execute("UPDATE invoices SET status=?, messages=? WHERE id=?",
+                        (status, json.dumps(messages, ensure_ascii=False), invoice_id))
+        self.db.commit()
+
+    def list_invoices(self, q: str = "") -> list[sqlite3.Row]:
+        like = f"%{q}%"
+        return self.db.execute(
+            "SELECT * FROM invoices WHERE number LIKE ? OR customer LIKE ? ORDER BY issue_date DESC, id DESC",
+            (like, like)).fetchall()
+
+    def get_invoice(self, invoice_id: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+
+    def customers(self) -> list[dict]:
+        """Distinct past customers, newest first, for quick re-use in the form."""
+        seen, out = set(), []
+        for row in self.db.execute("SELECT data FROM invoices ORDER BY id DESC"):
+            c = json.loads(row["data"])["customer"]
+            if c["cui"] not in seen:
+                seen.add(c["cui"])
+                out.append(c)
+        return out
+
+    def _write_file(self, year: int, number: str, xml: bytes) -> None:
+        folder = self.dir / "arhiva" / str(year)
+        folder.mkdir(parents=True, exist_ok=True)
+        safe = "".join(ch for ch in number if ch.isalnum() or ch in "-_")
+        (folder / f"{safe}.xml").write_bytes(xml)
