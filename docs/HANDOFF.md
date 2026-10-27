@@ -1,11 +1,20 @@
 # Handoff
 
 ## State (2026-10-27)
-- Released: v0.2.0 (Windows exe), v0.3.0 (storno + EUR/USD/GBP). See https://github.com/CodingBreadd/efactura-pfa/releases
-- **Phase 4 (v0.4.0)**, branch `phase4-edit-delete`: invoices in status `draft`/`invalid` can be edited
-  (number fixed, archive file moved if the year changes) or deleted (deleting the latest gives its number back,
-  and the confirmation warns about the gap otherwise). `valid` invoices only get a storno. "Am încărcat-o în SPV"
-  sets `sent` and locks the invoice for good. Originals show "Stornată prin X". Duplicate numbers give a 400 instead of a 500.
+- Released: v0.2.0 (exe), v0.3.0 (storno + EUR), v0.4.0 (edit/delete rejected). https://github.com/CodingBreadd/efactura-pfa/releases
+- **Phase 5a (v0.5.0)**, branch `phase5-foreign-customers`: customers can be outside Romania.
+  - `Party.country` (ISO alpha-2, default RO). Abroad, `county` holds a free-text region and `cui` the foreign VAT or registration id.
+  - **ANAF quirk:** the buyer legal id (BT-47) must be numeric, otherwise "ERRIdentif: nu a fost identificat cui cumparator".
+    Non-residents get `0000000000000` there. The real id goes in PartyIdentification (BT-46) and, for AE, PartyTaxScheme (BT-48).
+    Digits-only would pass too, but SPV routes by that number and could hit a real Romanian CUI.
+  - VAT regime (VAT payers only, invoice-wide): S / AE (reverse charge, needs the buyer's VAT id) / O (outside the EU).
+    The form picks it from the country and the VAT checkbox and fills in a suggested note (`VAT_NOTES`). Non-VAT payers are always O.
+  - All 5 foreign variants pass live ANAF. The form JS was exercised in jsdom (country switch, regime, note, rate lock).
+- Next: Phase 5b, an app icon (.ico for the exe plus a favicon) and polish (friendly HTML error pages instead of JSON).
+
+## Phase 4 notes (v0.4.0)
+- `draft`/`invalid` invoices can be edited (number fixed) or deleted (the latest returns its number). `valid` ones get a storno only.
+  "Am încărcat-o în SPV" sets `sent`. Originals show "Stornată prin X". Duplicate numbers give a 400.
 
 ## Phase 3 notes (v0.3.0)
 - Storno = UBL `CreditNote` (type 381), positive amounts, `BillingReference` to the original. No DueDate, no PaymentMeans.
@@ -27,15 +36,14 @@
   `SpvClient` (upload/status/list/download) is written from the docs but **untested**.
 - `efactura/store.py`: SQLite plus XML files in `<data>/arhiva/<year>/`
 - `efactura/app.py`: FastAPI and Jinja UI in Romanian. `python -m efactura` serves port 8765.
-- Tests: `pytest`, 25 passing (offline mode: `EFACTURA_OFFLINE=1`)
+- Tests: `pytest`, 34 passing (offline mode: `EFACTURA_OFFLINE=1`)
 
 ## Next steps (in order)
 1. Darius: post `docs/ANNOUNCE.md` to r/programare, r/Romania and PFA groups to find SPV testers.
-2. Foreign customers: non-RO country, no county code, foreign VAT id (common for freelancers billing EU/US clients).
-3. SPV OAuth: register the app on anaf.ro, get client_id/secret, add a redirect handler, store tokens.
+2. SPV OAuth: register the app on anaf.ro, get client_id/secret, add a redirect handler, store tokens.
    Needs a tester with a certificate.
-4. Pull received invoices (listaMesajeFactura + descarcare) into the archive. Needs SPV.
-5. Nice to have: an app icon (.ico) for the exe, and code signing to avoid the SmartScreen warning.
+3. Pull received invoices (listaMesajeFactura + descarcare) into the archive. Needs SPV.
+4. Nice to have: an app icon (.ico) for the exe, and code signing to avoid the SmartScreen warning.
 
 Why this project: no open-source e-Factura tool for PFAs exists (anafpy is transport only;
 Odoo modules are paid; PilotFisc/facturamea are closed), and SPV purges after ~60 days.

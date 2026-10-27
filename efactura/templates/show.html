@@ -37,13 +37,18 @@
 <div class="card grid">
   <div><h2>Furnizor</h2>{{ inv.supplier.name }}<br><span class="muted">CUI {{ inv.supplier.vat_id or inv.supplier.cui }}<br>
     {{ inv.supplier.street }}, {{ inv.supplier.city }}, {{ counties[inv.supplier.county] }}</span></div>
-  <div><h2>Client</h2>{{ inv.customer.name }}<br><span class="muted">CUI {{ inv.customer.vat_id or inv.customer.cui }}<br>
-    {{ inv.customer.street }}, {{ inv.customer.city }}, {{ counties[inv.customer.county] }}</span></div>
+  {% set c = inv.customer %}
+  <div><h2>Client</h2>{{ c.name }}<br><span class="muted">
+    {% if c.vat_id or c.cui %}{{ "CUI" if c.country == "RO" else "Cod" }} {{ c.vat_id or c.cui }}<br>{% endif %}
+    {{ c.street }}, {{ c.city }},
+    {% if c.country == "RO" %}{{ counties[c.county] }}{% else %}{% if c.county %}{{ c.county }}, {% endif %}{{ countries.get(c.country, c.country) }}{% endif %}</span></div>
   <div><h2>Date</h2>Emisă: {{ inv.issue_date }}{% if inv.due_date %}<br>Scadentă: {{ inv.due_date }}{% endif %}
     {% if inv.ref_number %}<br>Stornează factura {% if ref_id %}<a href="/factura/{{ ref_id }}">{{ inv.ref_number }}</a>{% else %}{{ inv.ref_number }}{% endif %}{% if inv.ref_date %} din {{ inv.ref_date }}{% endif %}{% endif %}
     {% for cn in credit_notes %}<br>Stornată prin <a href="/factura/{{ cn.id }}">{{ cn.number }}</a>{% endfor %}
-    {% if inv.currency != "RON" %}<br>Curs BNR: 1 {{ inv.currency }} = {{ inv.exchange_rate }} lei{% endif %}</div>
+    {% if inv.currency != "RON" %}<br>Curs BNR: 1 {{ inv.currency }} = {{ inv.exchange_rate }} lei{% endif %}
+    {% if inv.lines[0].vat_category == "AE" %}<br>Taxare inversă{% endif %}</div>
 </div>
+{% if inv.note %}<div class="card"><h2>Mențiuni</h2>{{ inv.note }}</div>{% endif %}
 
 <div class="card">
   <table>

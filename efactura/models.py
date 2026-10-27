@@ -27,9 +27,31 @@ UNITS = {
     "C62": "unitate", "KGM": "kg", "MTR": "metru",
 }
 
-# VAT categories supported for now: S = standard rate, O = not subject to VAT
-# (the usual case for a PFA that is not VAT registered).
-VAT_CATEGORIES = {"S": "Standard", "O": "Neplătitor de TVA"}
+# VAT categories: S = standard rate; AE = reverse charge (EU business customer);
+# O = not subject to Romanian VAT (a PFA that is not VAT registered, or a VAT payer
+# selling services outside the EU).
+VAT_CATEGORIES = {"S": "TVA standard", "AE": "Taxare inversă (client UE cu cod TVA)",
+                  "O": "Neimpozabil în România"}
+
+# Suggested invoice mentions. The user can edit them; worth a check with an accountant.
+VAT_NOTES = {"AE": "Taxare inversă / Reverse charge (art. 278 alin. (2) Cod fiscal)",
+             "O": "Neimpozabil în România / Not subject to Romanian VAT (art. 278 alin. (2) Cod fiscal)"}
+
+EU = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
+      "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
+
+COUNTRIES = {
+    "RO": "România", "AT": "Austria", "BE": "Belgia", "BG": "Bulgaria", "CZ": "Cehia", "CY": "Cipru",
+    "HR": "Croația", "DK": "Danemarca", "EE": "Estonia", "FI": "Finlanda", "FR": "Franța",
+    "DE": "Germania", "GR": "Grecia", "IE": "Irlanda", "IT": "Italia", "LV": "Letonia",
+    "LT": "Lituania", "LU": "Luxemburg", "MT": "Malta", "PL": "Polonia", "PT": "Portugalia",
+    "SK": "Slovacia", "SI": "Slovenia", "ES": "Spania", "SE": "Suedia", "NL": "Țările de Jos",
+    "HU": "Ungaria",
+    "AU": "Australia", "CA": "Canada", "CH": "Elveția", "AE": "Emiratele Arabe Unite", "IN": "India",
+    "IS": "Islanda", "IL": "Israel", "JP": "Japonia", "MD": "Republica Moldova", "NO": "Norvegia",
+    "NZ": "Noua Zeelandă", "GB": "Regatul Unit", "RS": "Serbia", "SG": "Singapore",
+    "US": "Statele Unite", "TR": "Turcia", "UA": "Ucraina",
+}
 
 CURRENCIES = {"RON": "lei", "EUR": "euro", "USD": "dolari SUA", "GBP": "lire sterline"}
 
@@ -41,19 +63,25 @@ def money(value) -> Decimal:
 @dataclass
 class Party:
     name: str
-    cui: str                      # fiscal code, digits only (no RO prefix)
+    cui: str                      # RO: fiscal code, digits only. Abroad: VAT or registration number
     street: str
     city: str                     # for București: SECTOR1..SECTOR6
-    county: str                   # key of COUNTIES
+    county: str                   # RO: key of COUNTIES. Abroad: free-text region, may be empty
     vat_payer: bool = False
     reg_com: str = ""             # trade register number, optional
     iban: str = ""
     bank: str = ""
     email: str = ""
+    country: str = "RO"           # ISO 3166-1 alpha-2
 
     @property
     def vat_id(self) -> str:
-        return f"RO{self.cui}" if self.vat_payer else ""
+        if not self.vat_payer or not self.cui:
+            return ""
+        if self.country == "RO":
+            return f"RO{self.cui}"
+        prefix = "EL" if self.country == "GR" else self.country  # Greece uses EL in VIES
+        return self.cui if self.cui[:2].isalpha() else f"{prefix}{self.cui}"
 
 
 @dataclass

@@ -117,3 +117,44 @@ def test_deleting_the_last_invoice_frees_its_number(client, monkeypatch):
     c.post("/factura/2/sterge")                     # the last one: its number is reused
     assert "TST0002" in c.get("/factura/noua").text
     assert not list((data_dir / "arhiva" / "2026").glob("*.xml"))
+
+
+def test_foreign_customers(client, monkeypatch):
+    import efactura.app
+    c, data_dir = client
+    monkeypatch.setattr(efactura.app.anaf, "validate", lambda xml: (True, []))
+    c.post("/setari", data={**SUPPLIER, "s_vat_payer": "on"})
+    de = {"c_name": "Kunde GmbH", "c_cui": "de 123 456 789", "c_street": "Hauptstr. 1", "c_city": "Berlin",
+          "c_country": "DE", "c_region": "", "c_county": "AB", "c_vat_payer": "on"}
+    form = {"issue_date": "2026-10-27", "currency": "EUR", "exchange_rate": "5.3467", "vat_regime": "AE",
+            "line_name": "Dev", "line_qty": "10", "line_price": "100", "line_unit": "HUR", "line_rate": "21"}
+    r = c.post("/factura/noua", data={**form, **de, "number": "TST0001"})
+    assert "Taxare inversă" in r.text and "Germania" in r.text and "1000.00 EUR" in r.text  # no VAT added
+    xml = c.get("/factura/1/xml").content
+    assert b"<cbc:CompanyID>DE123456789</cbc:CompanyID>" in xml and b"<cbc:ID>AE</cbc:ID>" in xml
+
+    no_vat_id = {**de, "c_vat_payer": ""}
+    assert c.post("/factura/noua", data={**form, **no_vat_id, "number": "TST0002"}).status_code == 400
+
+    us = {"c_name": "Client Inc", "c_cui": "", "c_street": "1 Main St", "c_city": "New York",
+          "c_country": "US", "c_region": "NY", "c_county": "AB"}
+    r = c.post("/factura/noua", data={**form, **us, "number": "TST0002", "vat_regime": "O"})
+    assert "NY, Statele Unite" in r.text and "1000.00 EUR" in r.text
+    assert b"0000000000000" in c.get("/factura/2/xml").content
+
+    page = c.get("/factura/1/storno").text
+    assert '<option value="AE" selected>' in page and 'value="Berlin"' in page
+    assert '<option value="DE" selected>' in page
+    assert [x["name"] for x in efactura.app.store.customers()] == ["Client Inc", "Kunde GmbH"]
+
+
+def test_non_vat_payer_is_always_category_o(client, monkeypatch):
+    import efactura.app
+    c, _ = client
+    monkeypatch.setattr(efactura.app.anaf, "validate", lambda xml: (True, []))
+    c.post("/setari", data=SUPPLIER)
+    form = {"number": "TST0001", "issue_date": "2026-10-27", **CUSTOMER, "vat_regime": "S",
+            "line_name": "X", "line_qty": "1", "line_price": "100", "line_unit": "HUR", "line_rate": "21"}
+    c.post("/factura/noua", data=form)
+    xml = c.get("/factura/1/xml").content
+    assert b"<cbc:ID>O</cbc:ID>" in xml and b"<cbc:ID>S</cbc:ID>" not in xml

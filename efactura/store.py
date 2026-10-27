@@ -141,8 +141,9 @@ class Store:
         seen, out = set(), []
         for row in self.db.execute("SELECT data FROM invoices ORDER BY id DESC"):
             c = json.loads(row["data"])["customer"]
-            if c["cui"] not in seen:
-                seen.add(c["cui"])
+            key = c["cui"] or c["name"]  # foreign customers may have no id
+            if key not in seen:
+                seen.add(key)
                 out.append(c)
         return out
 

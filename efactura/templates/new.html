@@ -37,11 +37,19 @@
       </select>
       {% endif %}
     </div>
-    {{ party_fields("c", customer) }}
+    {{ party_fields("c", customer, with_country=True) }}
   </div>
 
   <div class="card">
     <h2>Produse / servicii</h2>
+    {% if supplier.vat_payer %}
+    <label style="max-width:420px">Regim TVA
+      <select name="vat_regime" id="regime">
+        {% for code, name in vat_categories.items() %}
+        <option value="{{ code }}" {% if code == vat_regime %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}</select>
+      <span class="hint">Se alege singur după țara clientului. Verifică mențiunea cu contabilul.</span></label>
+    {% endif %}
     <table id="lines">
       <tr><th>Denumire</th><th style="width:90px">Cant.</th><th style="width:110px">U.M.</th>
           <th style="width:120px">Preț unitar</th>
@@ -78,6 +86,14 @@ const vatPayer = {{ supplier.vat_payer | tojson }};
 const prefill = {{ lines | tojson }};
 const isStorno = {{ (ref is not none) | tojson }};
 const num = v => parseFloat(String(v).replace(",", ".")) || 0;
+const eu = {{ eu | tojson }};
+const vatNotes = {{ vat_notes | tojson }};
+const regime = document.getElementById("regime");
+const country = document.querySelector("[name=c_country]");
+const custVat = document.querySelector("[name=c_vat_payer]");
+const note = document.querySelector("[name=note]");
+const standard = () => vatPayer && (!regime || regime.value === "S");
+let autoNote = Object.values(vatNotes).includes(note.value) ? note.value : "";
 
 function recalc() {
   let total = 0;
@@ -85,7 +101,7 @@ function recalc() {
     if (i === 0) return;
     const q = num(tr.querySelector("[name=line_qty]").value);
     const p = num(tr.querySelector("[name=line_price]").value);
-    const r = vatPayer ? num(tr.querySelector("[name=line_rate]").value) : 0;
+    const r = standard() ? num(tr.querySelector("[name=line_rate]").value) : 0;
     const net = Math.round(q * p * 100) / 100;
     tr.querySelector(".line-total").textContent = net.toFixed(2);
     total += net * (1 + r / 100);
@@ -98,8 +114,32 @@ function addLine(l) {
     const tr = table.rows[table.rows.length - 1];
     for (const k of ["name", "qty", "unit", "price", "rate"]) tr.querySelector(`[name=line_${k}]`).value = l[k];
   }
+  onRegime();
+}
+function onCountry() {
+  const ro = country.value === "RO";
+  document.getElementById("c-county-box").style.display = ro ? "" : "none";
+  document.getElementById("c-region-box").style.display = ro ? "none" : "";
+  document.querySelector("[name=c_cui]").required = ro;
+}
+function suggestRegime() {
+  if (!regime) return;
+  const c = country.value;
+  regime.value = c === "RO" ? "S" : !eu.includes(c) ? "O" : custVat.checked ? "AE" : "S";
+  onRegime();
+}
+function onRegime() {
+  // Rates only apply to standard VAT; keep the values so switching back restores them.
+  table.querySelectorAll("input[name=line_rate]").forEach(el => {
+    el.readOnly = !standard(); el.style.opacity = standard() ? "" : ".4";
+  });
+  const suggestion = regime ? (vatNotes[regime.value] || "") : "";
+  if (note.value === autoNote) { note.value = suggestion; autoNote = suggestion; }
   recalc();
 }
+country.onchange = () => { onCountry(); suggestRegime(); };
+custVat.onchange = suggestRegime;
+if (regime) regime.onchange = onRegime;
 document.getElementById("add").onclick = () => addLine();
 table.addEventListener("input", recalc);
 table.addEventListener("click", e => {
@@ -107,12 +147,16 @@ table.addEventListener("click", e => {
 });
 const pick = document.getElementById("pick");
 if (pick) pick.onchange = () => {
-  const c = customers[pick.value]; if (!c) return;
+  if (!customers[pick.value]) return;
+  const c = {country: "RO", ...customers[pick.value]};  // customers saved before v0.5 have no country
   for (const [k, v] of Object.entries(c)) {
     const el = document.querySelector(`[name=c_${k}]`);
     if (!el) continue;
     if (el.type === "checkbox") el.checked = !!v; else el.value = v ?? "";
   }
+  document.querySelector("[name=c_region]").value = c.country === "RO" ? "" : (c.county || "");
+  onCountry();
+  suggestRegime();
 };
 const currency = document.getElementById("currency");
 const rate = document.getElementById("rate");

@@ -15,7 +15,12 @@ NS_CN = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
 NS_CAC = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 NS_CBC = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 
-CUSTOMIZATION_ID = "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1"
+# ANAF only accepts a numeric buyer legal id (BT-47). For non-residents its guidance is 13 zeros;
+# stripping a foreign id to its digits would also pass but could match a real Romanian CUI,
+# and SPV routes invoices by that number.
+NON_RESIDENT_ID = "0000000000000"
+
+CUSTOMIZATION_ID ="urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1"
 
 
 def _cac(parent, tag):
@@ -38,18 +43,23 @@ def _rate(rate: Decimal) -> str:
 
 def _party(parent, party: Party, with_vat_id: bool):
     p = _cac(parent, "Party")
+    if party.country != "RO" and party.cui:
+        _cbc(_cac(p, "PartyIdentification"), "ID", party.cui)  # BT-46, the foreign id as given
     addr = _cac(p, "PostalAddress")
     _cbc(addr, "StreetName", party.street)
     _cbc(addr, "CityName", party.city)
-    _cbc(addr, "CountrySubentity", f"RO-{party.county}")
-    _cbc(_cac(addr, "Country"), "IdentificationCode", "RO")
+    if party.country == "RO":
+        _cbc(addr, "CountrySubentity", f"RO-{party.county}")
+    elif party.county:
+        _cbc(addr, "CountrySubentity", party.county)
+    _cbc(_cac(addr, "Country"), "IdentificationCode", party.country)
     if with_vat_id and party.vat_id:
         ts = _cac(p, "PartyTaxScheme")
         _cbc(ts, "CompanyID", party.vat_id)
         _cbc(_cac(ts, "TaxScheme"), "ID", "VAT")
     le = _cac(p, "PartyLegalEntity")
     _cbc(le, "RegistrationName", party.name)
-    _cbc(le, "CompanyID", party.cui)
+    _cbc(le, "CompanyID", party.cui if party.country == "RO" else NON_RESIDENT_ID)
     if party.email:
         _cbc(_cac(p, "Contact"), "ElectronicMail", party.email)
 
@@ -57,10 +67,10 @@ def _party(parent, party: Party, with_vat_id: bool):
 def _tax_category(parent, tag, category: str, rate: Decimal, with_reason: bool):
     tc = _cac(parent, tag)
     _cbc(tc, "ID", category)
-    if category == "S":
+    if category != "O":  # AE carries an explicit 0 rate (BR-AE-05/06)
         _cbc(tc, "Percent", _rate(rate))
-    elif with_reason and category == "O":
-        _cbc(tc, "TaxExemptionReasonCode", "VATEX-EU-O")
+    if with_reason and category in ("O", "AE"):
+        _cbc(tc, "TaxExemptionReasonCode", f"VATEX-EU-{category}")
     _cbc(_cac(tc, "TaxScheme"), "ID", "VAT")
 
 
