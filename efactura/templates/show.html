@@ -6,10 +6,29 @@
   <div class="row">
     <a class="btn ghost" href="/factura/{{ row.id }}/xml">Descarcă XML</a>
     <a class="btn ghost" href="/factura/{{ row.id }}/pdf" target="_blank">PDF (ANAF)</a>
-    {% if not inv.credit_note %}<a class="btn ghost" href="/factura/{{ row.id }}/storno">Stornează</a>{% endif %}
+    {% if editable %}
+    <a class="btn ghost" href="/factura/{{ row.id }}/editeaza">Editează</a>
+    <form method="post" action="/factura/{{ row.id }}/sterge"
+          onsubmit="return confirm('Ștergi factura {{ inv.number }}? XML-ul din arhivă se șterge și el.
+            {%- if not is_last %} Nu e ultima factură emisă, deci rămâne un gol în numerotare. Mai bine o corectezi.{% endif %}')">
+      <button class="btn ghost">Șterge</button></form>
+    {% elif not inv.credit_note %}
+    <a class="btn ghost" href="/factura/{{ row.id }}/storno">Stornează</a>
+    {% endif %}
+    {% if row.status == "valid" %}
+    <form method="post" action="/factura/{{ row.id }}/incarcata"
+          onsubmit="return confirm('Marchezi factura ca încărcată în SPV? După asta nu mai poate fi modificată.')">
+      <button class="btn ghost">Am încărcat-o în SPV</button></form>
+    {% endif %}
+    {% if row.status != "sent" %}
     <form method="post" action="/factura/{{ row.id }}/valideaza"><button class="btn ghost">Revalidează</button></form>
+    {% endif %}
   </div>
 </div>
+{% if editable %}
+<p class="hint">ANAF nu a acceptat încă factura, deci o poți corecta sau șterge. Numărul rămâne același;
+  dacă ștergi ultima factură emisă, numărul ei se refolosește.</p>
+{% endif %}
 
 {% if messages %}
 <div class="card"><h2>Mesaje ANAF</h2><ul class="msgs">{% for m in messages %}<li>{{ m }}</li>{% endfor %}</ul></div>
@@ -22,6 +41,7 @@
     {{ inv.customer.street }}, {{ inv.customer.city }}, {{ counties[inv.customer.county] }}</span></div>
   <div><h2>Date</h2>Emisă: {{ inv.issue_date }}{% if inv.due_date %}<br>Scadentă: {{ inv.due_date }}{% endif %}
     {% if inv.ref_number %}<br>Stornează factura {% if ref_id %}<a href="/factura/{{ ref_id }}">{{ inv.ref_number }}</a>{% else %}{{ inv.ref_number }}{% endif %}{% if inv.ref_date %} din {{ inv.ref_date }}{% endif %}{% endif %}
+    {% for cn in credit_notes %}<br>Stornată prin <a href="/factura/{{ cn.id }}">{{ cn.number }}</a>{% endfor %}
     {% if inv.currency != "RON" %}<br>Curs BNR: 1 {{ inv.currency }} = {{ inv.exchange_rate }} lei{% endif %}</div>
 </div>
 

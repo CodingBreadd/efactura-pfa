@@ -20,6 +20,7 @@ app = FastAPI(title="e-Factura PFA")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 store = Store()
 
+EDITABLE = {"draft", "invalid"}
 PARTY_FIELDS = ("name", "cui", "street", "city", "county", "reg_com", "iban", "bank", "email")
 
 
@@ -63,8 +64,13 @@ def _invoice_form(request: Request, **prefill):
     ctx = dict(number=store.next_number(), today=today.isoformat(),
                due=(today + timedelta(days=14)).isoformat(), supplier=store.get("supplier"),
                customers=store.customers(), customer={}, lines=[], currency="RON",
-               exchange_rate="", ref=None)
+               exchange_rate="", ref=None, note="", action="/factura/noua", editing=False)
     return render(request, "new.html", **(ctx | prefill))
+
+
+def _form_lines(inv: Invoice) -> list[dict]:
+    return [{"name": l.name, "qty": str(l.quantity), "unit": l.unit, "price": str(l.unit_price),
+             "rate": str(l.vat_rate)} for l in inv.lines]
 
 
 @app.get("/factura/noua", response_class=HTMLResponse)
@@ -80,9 +86,7 @@ def credit_note_form(request: Request, invoice_id: int):
     inv = Invoice.from_dict(json.loads(_row(invoice_id)["data"]))
     if inv.credit_note:
         raise HTTPException(400, "O factură storno nu se mai stornează.")
-    lines = [{"name": l.name, "qty": str(l.quantity), "unit": l.unit, "price": str(l.unit_price),
-              "rate": str(l.vat_rate)} for l in inv.lines]
-    return _invoice_form(request, customer=inv.customer.__dict__, lines=lines, currency=inv.currency,
+    return _invoice_form(request, customer=inv.customer.__dict__, lines=_form_lines(inv), currency=inv.currency,
                          exchange_rate=str(inv.exchange_rate or ""),
                          ref={"number": inv.number, "date": inv.issue_date.isoformat()})
 
@@ -96,9 +100,7 @@ def exchange_rate(moneda: str, data: str):
     return {"rate": str(rate), "date": published.isoformat()}
 
 
-@app.post("/factura/noua")
-async def create_invoice(request: Request):
-    form = await request.form()
+def _invoice_from_form(form, number: str) -> Invoice:
     supplier = Party(**store.get("supplier"))
     vat_payer = supplier.vat_payer
     try:
@@ -123,7 +125,7 @@ async def create_invoice(request: Request):
             rate = Decimal((form.get("exchange_rate") or "0").replace(",", "."))
             if rate <= 0:
                 raise ValueError("completează cursul BNR")
-        inv = Invoice(number=form["number"].strip(), issue_date=date.fromisoformat(form["issue_date"]),
+        inv = Invoice(number=number.strip(), issue_date=date.fromisoformat(form["issue_date"]),
                       due_date=date.fromisoformat(form["due_date"]) if form.get("due_date") and not credit else None,
                       supplier=supplier, customer=_party_from_form(form, "c"),
                       lines=lines, note=(form.get("note") or "").strip(),
@@ -134,16 +136,72 @@ async def create_invoice(request: Request):
             raise ValueError("storno fără factura de referință")
     except (ValueError, InvalidOperation, KeyError) as e:
         raise HTTPException(400, f"Date invalide: {e}")
+    return inv
 
-    xml = build_xml(inv)
+
+def _check(xml: bytes) -> tuple[str, list[str]]:
     try:
         ok, messages = anaf.validate(xml)
-        status = "valid" if ok else "invalid"
+        return ("valid" if ok else "invalid"), messages
     except httpx.HTTPError as e:
-        status, messages = "draft", [f"Validarea ANAF nu a răspuns: {e}"]
-    invoice_id = store.save_invoice(inv, xml, status, messages)
+        return "draft", [f"Validarea ANAF nu a răspuns: {e}"]
+
+
+@app.post("/factura/noua")
+async def create_invoice(request: Request):
+    form = await request.form()
+    inv = _invoice_from_form(form, form.get("number") or "")
+    if store.find_id(inv.number):
+        raise HTTPException(400, f"Numărul {inv.number} există deja.")
+    xml = build_xml(inv)
+    invoice_id = store.save_invoice(inv, xml, *_check(xml))
     if inv.number == store.next_number():
         store.bump_number()
+    return RedirectResponse(f"/factura/{invoice_id}", status_code=303)
+
+
+def _editable_row(invoice_id: int):
+    """Only invoices ANAF hasn't accepted can change. Valid ones get a storno instead."""
+    row = _row(invoice_id)
+    if row["status"] not in EDITABLE:
+        raise HTTPException(400, "Factura e deja validă. Pentru corecturi emite o factură storno.")
+    return row
+
+
+@app.get("/factura/{invoice_id}/editeaza", response_class=HTMLResponse)
+def edit_form(request: Request, invoice_id: int):
+    inv = Invoice.from_dict(json.loads(_editable_row(invoice_id)["data"]))
+    ref = {"number": inv.ref_number, "date": inv.ref_date.isoformat() if inv.ref_date else ""}
+    return _invoice_form(request, number=inv.number, today=inv.issue_date.isoformat(),
+                         due=inv.due_date.isoformat() if inv.due_date else "", note=inv.note,
+                         customer=inv.customer.__dict__, lines=_form_lines(inv), currency=inv.currency,
+                         exchange_rate=str(inv.exchange_rate or ""), ref=ref if inv.credit_note else None,
+                         action=f"/factura/{invoice_id}/editeaza", editing=True)
+
+
+@app.post("/factura/{invoice_id}/editeaza")
+async def edit_invoice(request: Request, invoice_id: int):
+    row = _editable_row(invoice_id)
+    inv = _invoice_from_form(await request.form(), row["number"])  # the number never changes
+    xml = build_xml(inv)
+    store.update_invoice(invoice_id, inv, xml, *_check(xml))
+    return RedirectResponse(f"/factura/{invoice_id}", status_code=303)
+
+
+@app.post("/factura/{invoice_id}/sterge")
+def delete_invoice(invoice_id: int):
+    _editable_row(invoice_id)
+    store.delete_invoice(invoice_id)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/factura/{invoice_id}/incarcata")
+def mark_uploaded(invoice_id: int):
+    """The user uploaded the XML to SPV by hand: lock it like a sent invoice."""
+    row = _row(invoice_id)
+    if row["status"] != "valid":
+        raise HTTPException(400, "Doar o factură validă se încarcă în SPV.")
+    store.update_status(invoice_id, "sent", json.loads(row["messages"]))
     return RedirectResponse(f"/factura/{invoice_id}", status_code=303)
 
 
@@ -153,7 +211,9 @@ def show_invoice(request: Request, invoice_id: int):
     inv = Invoice.from_dict(json.loads(row["data"]))
     ref_id = store.find_id(inv.ref_number) if inv.ref_number else None
     return render(request, "show.html", row=row, inv=inv, messages=json.loads(row["messages"]),
-                  ref_id=ref_id)
+                  ref_id=ref_id, credit_notes=store.credit_notes_for(inv.number),
+                  editable=row["status"] in EDITABLE,
+                  is_last=row["number"] == store.number(store.get("next_number", 1) - 1))
 
 
 @app.post("/factura/{invoice_id}/valideaza")

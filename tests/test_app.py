@@ -74,3 +74,46 @@ def test_eur_invoice_and_storno(client, monkeypatch):
     assert c.get("/factura/2/xml").content.count(b"<cbc:CreditNoteTypeCode>381") == 1
     assert c.get("/factura/2/storno").status_code == 400
     assert "-400.00 EUR" in c.get("/").text
+
+
+def test_fix_rejected_invoice_keeps_numbering(client, monkeypatch):
+    import efactura.app
+    c, data_dir = client
+    verdict = [(False, ["BR-RO-xxx: eroare"])]
+    monkeypatch.setattr(efactura.app.anaf, "validate", lambda xml: verdict[0])
+    c.post("/setari", data=SUPPLIER)
+    form = {"number": "TST0001", "issue_date": "2026-10-27", **CUSTOMER, "note": "prima",
+            "line_name": "Consultanță", "line_qty": "1", "line_price": "100", "line_unit": "HUR", "line_rate": "0"}
+    assert "cu erori" in c.post("/factura/noua", data=form).text
+    assert c.post("/factura/noua", data=form).status_code == 400  # number already used
+
+    page = c.get("/factura/1/editeaza").text
+    assert "readonly" in page and ">prima</textarea>" in page and '"price": "100"' in page
+    verdict[0] = (True, [])
+    r = c.post("/factura/1/editeaza", data={**form, "number": "HACK", "issue_date": "2027-01-05", "line_price": "150"})
+    assert "validă la ANAF" in r.text and "150.00" in r.text and "TST0001" in r.text
+    assert (data_dir / "arhiva" / "2027" / "TST0001.xml").exists()
+    assert not (data_dir / "arhiva" / "2026" / "TST0001.xml").exists()
+
+    # Valid now: locked, only storno. Marking it uploaded removes revalidation too.
+    assert c.get("/factura/1/editeaza").status_code == 400
+    assert c.post("/factura/1/sterge").status_code == 400
+    assert "Revalidează" not in c.post("/factura/1/incarcata").text
+    c.post("/factura/noua", data={**form, "number": "TST0002", "credit_note": "1", "ref_number": "TST0001"})
+    assert 'Stornată prin <a href="/factura/2">TST0002</a>' in c.get("/factura/1").text
+
+
+def test_deleting_the_last_invoice_frees_its_number(client, monkeypatch):
+    import efactura.app
+    c, data_dir = client
+    monkeypatch.setattr(efactura.app.anaf, "validate", lambda xml: (False, ["eroare"]))
+    c.post("/setari", data=SUPPLIER)
+    form = {"issue_date": "2026-10-27", **CUSTOMER,
+            "line_name": "X", "line_qty": "1", "line_price": "1", "line_unit": "HUR", "line_rate": "0"}
+    c.post("/factura/noua", data={**form, "number": "TST0001"})
+    c.post("/factura/noua", data={**form, "number": "TST0002"})
+    c.post("/factura/1/sterge")                     # not the last one: the gap stays
+    assert "TST0003" in c.get("/factura/noua").text
+    c.post("/factura/2/sterge")                     # the last one: its number is reused
+    assert "TST0002" in c.get("/factura/noua").text
+    assert not list((data_dir / "arhiva" / "2026").glob("*.xml"))

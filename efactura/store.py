@@ -68,26 +68,50 @@ class Store:
         self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, json.dumps(value)))
         self.db.commit()
 
+    def number(self, n: int) -> str:
+        return f"{self.get('series', 'PFA')}{n:04d}"
+
     def next_number(self) -> str:
-        series = self.get("series", "PFA")
-        n = self.get("next_number", 1)
-        return f"{series}{n:04d}"
+        return self.number(self.get("next_number", 1))
 
     def bump_number(self) -> None:
         self.set("next_number", self.get("next_number", 1) + 1)
 
     # invoices
+    @staticmethod
+    def _columns(inv, xml: bytes, status: str, messages: list[str]) -> tuple:
+        """issue_date, customer, total, currency, data, xml, status, messages"""
+        return (inv.issue_date.isoformat(), inv.customer.name,
+                str(-inv.gross_total if inv.credit_note else inv.gross_total),
+                inv.currency, json.dumps(inv.to_dict(), ensure_ascii=False), xml, status,
+                json.dumps(messages, ensure_ascii=False))
+
     def save_invoice(self, inv, xml: bytes, status: str, messages: list[str]) -> int:
         cur = self.db.execute(
             "INSERT INTO invoices (number, issue_date, customer, total, currency, data, xml, status, messages)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
-            (inv.number, inv.issue_date.isoformat(), inv.customer.name,
-             str(-inv.gross_total if inv.credit_note else inv.gross_total),
-             inv.currency, json.dumps(inv.to_dict(), ensure_ascii=False), xml, status,
-             json.dumps(messages, ensure_ascii=False)))
+            " VALUES (?,?,?,?,?,?,?,?,?)", (inv.number, *self._columns(inv, xml, status, messages)))
         self.db.commit()
-        self._write_file(inv.issue_date.year, inv.number, xml)
+        self._path(inv.issue_date.year, inv.number).write_bytes(xml)
         return cur.lastrowid
+
+    def update_invoice(self, invoice_id: int, inv, xml: bytes, status: str, messages: list[str]) -> None:
+        old = self.get_invoice(invoice_id)
+        self._path(int(old["issue_date"][:4]), old["number"]).unlink(missing_ok=True)  # the year may change
+        self.db.execute(
+            "UPDATE invoices SET issue_date=?, customer=?, total=?, currency=?, data=?, xml=?, status=?,"
+            " messages=? WHERE id=?", (*self._columns(inv, xml, status, messages), invoice_id))
+        self.db.commit()
+        self._path(inv.issue_date.year, inv.number).write_bytes(xml)
+
+    def delete_invoice(self, invoice_id: int) -> None:
+        row = self.get_invoice(invoice_id)
+        self.db.execute("DELETE FROM invoices WHERE id=?", (invoice_id,))
+        self.db.commit()
+        self._path(int(row["issue_date"][:4]), row["number"]).unlink(missing_ok=True)
+        # Hand the number back if it was the last one, so the sequence has no gap.
+        n = self.get("next_number", 1)
+        if n > 1 and row["number"] == self.number(n - 1):
+            self.set("next_number", n - 1)
 
     def update_status(self, invoice_id: int, status: str, messages: list[str]) -> None:
         self.db.execute("UPDATE invoices SET status=?, messages=? WHERE id=?",
@@ -107,6 +131,11 @@ class Store:
         row = self.db.execute("SELECT id FROM invoices WHERE number=?", (number,)).fetchone()
         return row["id"] if row else None
 
+    def credit_notes_for(self, number: str) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT id, number FROM invoices WHERE json_extract(data, '$.credit_note')"
+            " AND json_extract(data, '$.ref_number') = ?", (number,)).fetchall()
+
     def customers(self) -> list[dict]:
         """Distinct past customers, newest first, for quick re-use in the form."""
         seen, out = set(), []
@@ -117,8 +146,8 @@ class Store:
                 out.append(c)
         return out
 
-    def _write_file(self, year: int, number: str, xml: bytes) -> None:
+    def _path(self, year: int, number: str) -> Path:
         folder = self.dir / "arhiva" / str(year)
         folder.mkdir(parents=True, exist_ok=True)
         safe = "".join(ch for ch in number if ch.isalnum() or ch in "-_")
-        (folder / f"{safe}.xml").write_bytes(xml)
+        return folder / f"{safe}.xml"
