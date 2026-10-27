@@ -26,11 +26,14 @@ is built by GitHub Actions from this repo (`.github/workflows/build.yml`).
 - Hand-writing UBL XML is error-prone (county codes, `SECTOR1..6` for Bucharest,
   VAT category rules for non-VAT payers…).
 
-## Features (v0.2)
+## Features (v0.3)
 
 - Simple web form in Romanian, runs only on your computer (`127.0.0.1`)
 - Generates UBL 2.1 XML in the **CIUS-RO** format
 - Non-VAT payers (category `O`) and VAT payers (category `S`, 21%)
+- **Storno** (credit note, type 381) in one click from any invoice, full or partial
+- Invoices in **EUR, USD, GBP**, with the BNR rate filled in automatically
+  (the last rate published before the invoice date) and VAT reported in RON
 - Automatic validation with ANAF's public validator (no certificate needed)
 - Official ANAF PDF rendering
 - Local archive: SQLite + one XML file per invoice in `data/arhiva/<year>/`
@@ -71,7 +74,8 @@ EFACTURA_OFFLINE=1 pytest   # skip network tests
 
 - [ ] Send to SPV via OAuth (needs testers with a certificate)
 - [ ] Download received invoices and SPV responses into the archive
-- [ ] Credit notes (storno), foreign currency (EUR with RON VAT totals)
+- [x] Credit notes (storno), foreign currency (EUR/USD/GBP with RON VAT totals)
+- [ ] Foreign customers (non-Romanian addresses)
 - [x] Windows `.exe` build
 
 Contributions welcome, especially from people who can test the SPV upload.

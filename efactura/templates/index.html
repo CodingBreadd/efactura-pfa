@@ -14,7 +14,7 @@
     <tr><th>Număr</th><th>Data</th><th>Client</th><th class="num">Total</th><th>Stare</th></tr>
     {% for i in invoices %}
     <tr>
-      <td><a href="/factura/{{ i.id }}">{{ i.number }}</a></td>
+      <td><a href="/factura/{{ i.id }}">{{ i.number }}</a>{% if i.total.startswith("-") %} <span class="badge muted">storno</span>{% endif %}</td>
       <td>{{ i.issue_date }}</td>
       <td>{{ i.customer }}</td>
       <td class="num">{{ i.total }} {{ i.currency }}</td>

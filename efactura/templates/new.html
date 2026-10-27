@@ -1,12 +1,27 @@
 {% extends "base.html" %}
 {% from "_party.html" import party_fields with context %}
 {% block content %}
-<h1>Factură nouă</h1>
+<h1>{% if ref %}Factură storno pentru {{ ref.number }}{% else %}Factură nouă{% endif %}</h1>
 <form method="post" action="/factura/noua">
+  {% if ref %}
+  <input type="hidden" name="credit_note" value="1">
+  <input type="hidden" name="ref_number" value="{{ ref.number }}">
+  <input type="hidden" name="ref_date" value="{{ ref.date }}">
+  <p class="hint">Liniile sunt cele din factura {{ ref.number }} din {{ ref.date }}. Pentru o stornare
+    parțială, micșorează cantitățile sau șterge linii. Sumele rămân pozitive: documentul pleacă la ANAF
+    ca notă de credit (tip 381) care face referire la factura inițială.</p>
+  {% endif %}
   <div class="card grid">
     <label>Număr<input name="number" value="{{ number }}" required></label>
     <label>Data emiterii<input name="issue_date" type="date" value="{{ today }}" required></label>
-    <label>Scadență<input name="due_date" type="date" value="{{ due }}"></label>
+    {% if not ref %}<label>Scadență<input name="due_date" type="date" value="{{ due }}"></label>{% endif %}
+    <label>Monedă<select name="currency" id="currency">
+      {% for code, name in currencies.items() %}
+      <option value="{{ code }}" {% if code == currency %}selected{% endif %}>{{ code }} ({{ name }})</option>
+      {% endfor %}</select></label>
+    <label id="rate-box">Curs BNR, lei pentru 1 unitate
+      <input name="exchange_rate" id="rate" value="{{ exchange_rate }}" inputmode="decimal">
+      <span class="hint" id="rate-hint">{% if ref and exchange_rate %}cursul din factura inițială{% endif %}</span></label>
   </div>
 
   <div class="card">
@@ -19,7 +34,7 @@
       </select>
       {% endif %}
     </div>
-    {{ party_fields("c", {}) }}
+    {{ party_fields("c", customer) }}
   </div>
 
   <div class="card">
@@ -31,12 +46,12 @@
           <th class="num" style="width:110px">Valoare</th><th></th></tr>
     </table>
     <button type="button" class="btn ghost" id="add">+ Linie</button>
-    <p class="num" style="text-align:right">Total: <b id="total">0.00</b> RON
+    <p class="num" style="text-align:right">Total: <b id="total">0.00</b> <span id="cur">{{ currency }}</span>
       {% if not supplier.vat_payer %}<span class="hint">(neplătitor de TVA)</span>{% endif %}</p>
   </div>
 
   <div class="card"><label>Mențiuni (opțional)<textarea name="note" rows="2"></textarea></label></div>
-  <button class="btn">Generează și validează</button>
+  <button class="btn">{% if ref %}Generează storno și validează{% else %}Generează și validează{% endif %}</button>
   <span class="hint">Factura e verificată automat la ANAF (fără autentificare).</span>
 </form>
 
@@ -57,6 +72,8 @@
 const customers = {{ customers | tojson }};
 const table = document.getElementById("lines");
 const vatPayer = {{ supplier.vat_payer | tojson }};
+const prefill = {{ lines | tojson }};
+const isStorno = {{ (ref is not none) | tojson }};
 const num = v => parseFloat(String(v).replace(",", ".")) || 0;
 
 function recalc() {
@@ -72,11 +89,15 @@ function recalc() {
   });
   document.getElementById("total").textContent = total.toFixed(2);
 }
-function addLine() {
+function addLine(l) {
   table.appendChild(document.getElementById("line-tpl").content.cloneNode(true));
+  if (l) {
+    const tr = table.rows[table.rows.length - 1];
+    for (const k of ["name", "qty", "unit", "price", "rate"]) tr.querySelector(`[name=line_${k}]`).value = l[k];
+  }
   recalc();
 }
-document.getElementById("add").onclick = addLine;
+document.getElementById("add").onclick = () => addLine();
 table.addEventListener("input", recalc);
 table.addEventListener("click", e => {
   if (e.target.classList.contains("del") && table.rows.length > 2) { e.target.closest("tr").remove(); recalc(); }
@@ -90,6 +111,33 @@ if (pick) pick.onchange = () => {
     if (el.type === "checkbox") el.checked = !!v; else el.value = v ?? "";
   }
 };
-addLine();
+const currency = document.getElementById("currency");
+const rate = document.getElementById("rate");
+const rateHint = document.getElementById("rate-hint");
+const issue = document.querySelector("[name=issue_date]");
+function showRate() {
+  const foreign = currency.value !== "RON";
+  document.getElementById("rate-box").style.display = foreign ? "" : "none";
+  document.getElementById("cur").textContent = currency.value;
+  rate.required = foreign;
+  return foreign;
+}
+async function loadRate() {
+  if (!showRate()) return;
+  rateHint.textContent = "se încarcă cursul BNR…";
+  try {
+    const r = await fetch(`/curs?moneda=${currency.value}&data=${issue.value}`);
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    rate.value = d.rate;
+    rateHint.textContent = `curs BNR publicat pe ${d.date}`;
+  } catch (e) {
+    rateHint.textContent = "Nu am putut lua cursul BNR. Completează-l manual.";
+  }
+}
+currency.onchange = loadRate;
+if (!isStorno) issue.addEventListener("change", loadRate);
+if (showRate() && !rate.value) loadRate();
+if (prefill.length) prefill.forEach(l => addLine(l)); else addLine();
 </script>
 {% endblock %}

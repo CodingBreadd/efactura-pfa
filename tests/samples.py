@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -22,3 +23,12 @@ def pfa_invoice(vat_payer: bool = False) -> Invoice:
                  unit="MON", vat_category=cat, vat_rate=rate),
         ],
     )
+
+
+def credit_note(vat_payer: bool = False, **kw) -> Invoice:
+    return replace(pfa_invoice(vat_payer), number="PFA0002", credit_note=True,
+                   ref_number="PFA0001", ref_date=date(2026, 10, 27), **kw)
+
+
+def eur(inv: Invoice) -> Invoice:
+    return replace(inv, currency="EUR", exchange_rate=Decimal("5.3487"))
