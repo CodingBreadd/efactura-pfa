@@ -7,9 +7,31 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("EFACTURA_DATA", Path.cwd() / "data"))
+
+def _documents_dir() -> Path:
+    """The real Documents folder, even when OneDrive has redirected it."""
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(260)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0:  # CSIDL_PERSONAL
+            return Path(buf.value)
+    except (AttributeError, OSError):
+        pass
+    return Path.home() / "Documents"
+
+
+def _default_data_dir() -> Path:
+    if env := os.environ.get("EFACTURA_DATA"):
+        return Path(env)
+    if getattr(sys, "frozen", False):  # the .exe can be run from anywhere, so don't use cwd
+        return _documents_dir() / "e-Factura PFA"
+    return Path.cwd() / "data"
+
+
+DATA_DIR = _default_data_dir()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

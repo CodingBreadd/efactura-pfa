@@ -14,6 +14,11 @@
       <label>Următorul număr<input name="next_number" type="number" min="1" value="{{ next_number }}"></label>
     </div>
   </div>
+  <div class="card">
+    <h2>Arhiva</h2>
+    <p class="hint">Facturile și setările sunt salvate în <code>{{ data_dir }}</code>.
+      Fă backup la acest folder; SPV nu păstrează facturile mai mult de ~60 de zile.</p>
+  </div>
   <button class="btn">Salvează</button>
 </form>
 {% endblock %}

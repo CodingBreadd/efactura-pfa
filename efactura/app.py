@@ -44,7 +44,8 @@ def index(request: Request, q: str = ""):
 @app.get("/setari", response_class=HTMLResponse)
 def settings_page(request: Request):
     return render(request, "settings.html", s=store.get("supplier", {}),
-                  series=store.get("series", "PFA"), next_number=store.get("next_number", 1))
+                  series=store.get("series", "PFA"), next_number=store.get("next_number", 1),
+                  data_dir=store.dir.resolve())
 
 
 @app.post("/setari")
